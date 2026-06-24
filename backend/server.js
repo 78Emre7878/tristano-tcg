@@ -4,8 +4,23 @@ const path = require("path");
 const { Server } = require("socket.io");
 const cors = require("cors");
 
+const {
+  createGameState,
+  drawCard,
+  playCardToField,
+  specialSummon,
+  attackMonsterZone,
+  nextPhase,
+  activateJoker,
+  activateCardEffect,
+  flipMonster,
+  destroyBySix,
+  reviveMonster,
+} = require("./gameLogic");
+
 const app = express();
 const server = http.createServer(app);
+
 const io = new Server(server, {
   cors: {
     origin: "*",
@@ -13,102 +28,458 @@ const io = new Server(server, {
 });
 
 app.use(cors());
-
-// 🟢 Statische Dateien der React-App bereitstellen
 app.use(express.static(path.join(__dirname, "../frontend/build")));
 
-// 🧠 In-Memory Speicher
-const lobby = new Map(); // socket.id => name
-const rooms = new Map(); // roomId => { players: [], ready: Set(), gameState: {...} }
+const lobby = new Map();
+const rooms = new Map();
 
-// 🔌 Socket.IO Logik
+function broadcastLobby() {
+  io.emit("lobbyUpdate", {
+    players: Array.from(lobby.values()),
+
+    rooms: Array.from(
+      rooms.entries()
+    ).map(([id, room]) => ({
+      id,
+      players: room.players,
+    })),
+  });
+}
+
+function findRoomByPlayer(playerName) {
+  for (const room of rooms.values()) {
+    if (
+      room.players.includes(playerName)
+    ) {
+      return room;
+    }
+  }
+
+  return null;
+}
+
 io.on("connection", (socket) => {
-  console.log("🟢 Client verbunden:", socket.id);
+
+  console.log(
+    "🟢 Verbunden:",
+    socket.id
+  );
+
   let playerName = "";
 
-  socket.on("joinLobby", (name) => {
-    playerName = name;
-    lobby.set(socket.id, name);
+  // ------------------
+  // LOBBY
+  // ------------------
+
+  socket.on("joinLobby", (data) => {
+
+    playerName = data.playerName;
+
+    lobby.set(
+      socket.id,
+      playerName
+    );
+
     broadcastLobby();
   });
 
   socket.on("createRoom", () => {
-    if (!playerName) return socket.emit("errorMessage", "Name fehlt.");
-    if (rooms.has(playerName)) {
-      return socket.emit("errorMessage", "Du hast bereits einen Raum.");
-    }
+
+    if (!playerName) return;
+
+    if (rooms.has(playerName))
+      return;
 
     rooms.set(playerName, {
+      id: playerName,
       players: [playerName],
       ready: new Set(),
       gameState: null,
     });
 
     lobby.delete(socket.id);
+
     socket.join(playerName);
-    socket.emit("roomCreated", { id: playerName, players: [playerName] });
+
+    socket.emit("roomCreated", {
+      id: playerName,
+      players: [playerName],
+    });
+
     broadcastLobby();
   });
 
-  socket.on("joinRoom", (hostName) => {
-    const room = rooms.get(hostName);
-    if (!room) return socket.emit("errorMessage", "Raum existiert nicht.");
-    if (room.players.length >= 2) return socket.emit("errorMessage", "Raum ist voll.");
-    if (room.players.includes(playerName)) return;
+  socket.on("joinRoom", (roomId) => {
+
+    const room =
+      rooms.get(roomId);
+
+    if (!room) return;
+
+    if (
+      room.players.length >= 2
+    ) return;
 
     room.players.push(playerName);
-    room.ready.delete(playerName);
-    socket.join(hostName);
+
+    socket.join(roomId);
+
     lobby.delete(socket.id);
-    io.to(hostName).emit("roomJoined", { id: hostName, players: room.players });
+
+    io.to(roomId).emit(
+      "roomJoined",
+      {
+        id: roomId,
+        players: room.players,
+      }
+    );
+
     broadcastLobby();
   });
 
-  socket.on("leaveRoom", () => {
-    for (const [roomId, room] of rooms.entries()) {
-      if (room.players.includes(playerName)) {
-        room.players = room.players.filter((p) => p !== playerName);
-        room.ready.delete(playerName);
-        if (room.players.length === 0) {
-          rooms.delete(roomId);
-        } else {
-          io.to(roomId).emit("roomJoined", { id: roomId, players: room.players });
-        }
-        socket.leave(roomId);
-        break;
+  socket.on(
+    "playerReady",
+    (roomId) => {
+
+      const room =
+        rooms.get(roomId);
+
+      if (!room) return;
+
+      room.ready.add(playerName);
+
+      io.to(roomId).emit(
+        "readyStatus",
+        Array.from(room.ready)
+      );
+
+      if (
+        room.ready.size === 2 &&
+        !room.gameState
+      ) {
+
+        room.gameState =
+          createGameState(
+            room.players
+          );
+
+        io.to(roomId).emit(
+          "gameStarted",
+          room.gameState
+        );
       }
     }
-    lobby.set(socket.id, playerName);
-    socket.emit("roomLeft");
-    broadcastLobby();
+  );
+
+  // ------------------
+  // SPIEL
+  // ------------------
+
+  socket.on("drawCard", () => {
+
+    const room =
+      findRoomByPlayer(
+        playerName
+      );
+
+    if (
+      !room ||
+      !room.gameState
+    ) return;
+
+    drawCard(
+      room.gameState,
+      playerName
+    );
+
+    io.to(room.id).emit(
+      "gameStateUpdate",
+      room.gameState
+    );
   });
 
-  socket.on("playerReady", (roomId) => {
-    const room = rooms.get(roomId);
-    if (!room) return;
-    room.ready.add(playerName);
-    io.to(roomId).emit("readyStatus", Array.from(room.ready));
+  socket.on(
+    "playCardToField",
+    (data) => {
 
-    if (room.ready.size === 2 && !room.gameState) {
-      const gameState = createGameState(room.players);
-      room.gameState = gameState;
-      io.to(roomId).emit("gameStarted", gameState);
+      const room =
+        findRoomByPlayer(
+          playerName
+        );
+
+      if (
+        !room ||
+        !room.gameState
+      ) return;
+
+      playCardToField(
+        room.gameState,
+        playerName,
+        data.handIndex,
+        data.fieldIndex,
+        data.faceDown
+      );
+
+      io.to(room.id).emit(
+        "gameStateUpdate",
+        room.gameState
+      );
     }
+  );
+
+  socket.on(
+    "specialSummon",
+    (data) => {
+
+      const room =
+        findRoomByPlayer(
+          playerName
+        );
+
+      if (
+        !room ||
+        !room.gameState
+      ) return;
+
+      specialSummon(
+        room.gameState,
+        playerName,
+        data.keepIndex,
+        data.discardIndex,
+        data.fieldIndex
+      );
+
+      io.to(room.id).emit(
+        "gameStateUpdate",
+        room.gameState
+      );
+    }
+  );
+
+  socket.on(
+    "activateJoker",
+    (data) => {
+
+      const room =
+        findRoomByPlayer(
+          playerName
+        );
+
+      if (
+        !room ||
+        !room.gameState
+      ) return;
+
+      activateJoker(
+        room.gameState,
+        playerName,
+        data.handIndex,
+        data.targetIndex
+      );
+
+      io.to(room.id).emit(
+        "gameStateUpdate",
+        room.gameState
+      );
+    }
+  );
+
+  socket.on(
+    "activateEffect",
+    (data) => {
+
+      const room =
+        findRoomByPlayer(
+          playerName
+        );
+
+      if (
+        !room ||
+        !room.gameState
+      ) return;
+
+      activateCardEffect(
+        room.gameState,
+        playerName,
+        data.handIndex,
+        data.targetIndex
+      );
+
+      io.to(room.id).emit(
+        "gameStateUpdate",
+        room.gameState
+      );
+    }
+  );
+
+  socket.on(
+    "flipMonster",
+    (fieldIndex) => {
+
+      const room =
+        findRoomByPlayer(
+          playerName
+        );
+
+      if (
+        !room ||
+        !room.gameState
+      ) return;
+
+      flipMonster(
+        room.gameState,
+        playerName,
+        fieldIndex
+      );
+
+      io.to(room.id).emit(
+        "gameStateUpdate",
+        room.gameState
+      );
+    }
+  );
+
+  socket.on(
+    "destroyBySix",
+    (data) => {
+
+      const room =
+        findRoomByPlayer(
+          playerName
+        );
+
+      if (
+        !room ||
+        !room.gameState
+      ) return;
+
+      destroyBySix(
+        room.gameState,
+        playerName,
+        data.targetPlayer,
+        data.targetIndex
+      );
+
+      io.to(room.id).emit(
+        "gameStateUpdate",
+        room.gameState
+      );
+    }
+  );
+
+  socket.on(
+    "reviveMonster",
+    (graveIndex) => {
+
+      const room =
+        findRoomByPlayer(
+          playerName
+        );
+
+      if (
+        !room ||
+        !room.gameState
+      ) return;
+
+      reviveMonster(
+        room.gameState,
+        playerName,
+        graveIndex
+      );
+
+      io.to(room.id).emit(
+        "gameStateUpdate",
+        room.gameState
+      );
+    }
+  );
+
+  socket.on(
+    "attack",
+    (data) => {
+
+      const room =
+        findRoomByPlayer(
+          playerName
+        );
+
+      if (
+        !room ||
+        !room.gameState
+      ) return;
+
+      const opponent =
+        room.players.find(
+          p => p !== playerName
+        );
+
+      attackMonsterZone(
+        room.gameState,
+        playerName,
+        data.attackerIndex,
+        opponent,
+        data.defenderIndex
+      );
+
+      io.to(room.id).emit(
+        "gameStateUpdate",
+        room.gameState
+      );
+    }
+  );
+
+  socket.on("nextPhase", () => {
+
+    const room =
+      findRoomByPlayer(
+        playerName
+      );
+
+    if (
+      !room ||
+      !room.gameState
+    ) return;
+
+    nextPhase(room.gameState);
+
+    io.to(room.id).emit(
+      "gameStateUpdate",
+      room.gameState
+    );
   });
 
   socket.on("disconnect", () => {
-    console.log(`🔴 ${playerName || socket.id} hat die Verbindung getrennt`);
+
+    console.log(
+      "🔴 Getrennt:",
+      playerName
+    );
+
     lobby.delete(socket.id);
 
-    for (const [roomId, room] of rooms.entries()) {
-      if (room.players.includes(playerName)) {
-        room.players = room.players.filter((p) => p !== playerName);
-        room.ready.delete(playerName);
-        if (room.players.length === 0) {
-          rooms.delete(roomId);
-        } else {
-          io.to(roomId).emit("roomJoined", { id: roomId, players: room.players });
+    for (const [id, room] of rooms) {
+
+      if (
+        room.players.includes(
+          playerName
+        )
+      ) {
+
+        room.players =
+          room.players.filter(
+            p => p !== playerName
+          );
+
+        room.ready.delete(
+          playerName
+        );
+
+        if (
+          room.players.length === 0
+        ) {
+          rooms.delete(id);
         }
+
         break;
       }
     }
@@ -116,62 +487,30 @@ io.on("connection", (socket) => {
     broadcastLobby();
   });
 
-  function broadcastLobby() {
-    const playerNames = Array.from(lobby.values());
-    io.emit("lobbyUpdate", playerNames);
-  }
 });
 
-// 🃏 Spielzustand und Deck-Logik
-function createGameState(players) {
-  const redDeck = generateTristanoDeck("rot");
-  const blackDeck = generateTristanoDeck("schwarz");
-
-  return {
-    players,
-    decks: {
-      [players[0]]: shuffle([...redDeck]),
-      [players[1]]: shuffle([...blackDeck]),
-    },
-    hands: {
-      [players[0]]: [],
-      [players[1]]: [],
-    },
-    field: [],
-    turn: players[0],
-    phase: "start",
-  };
-}
-
-function generateTristanoDeck(farbe) {
-  const werte = ["4", "5", "6", "7", "8", "9", "10", "Bube", "Dame", "König", "Ass"];
-  let deck = [];
-
-  werte.forEach((wert) => {
-    deck.push({ farbe, wert });
-    deck.push({ farbe, wert });
-  });
-
-  deck.push({ farbe, wert: "Joker" });
-  return deck;
-}
-
-function shuffle(array) {
-  let currentIndex = array.length;
-  while (currentIndex !== 0) {
-    const randomIndex = Math.floor(Math.random() * currentIndex--);
-    [array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]];
-  }
-  return array;
-}
-
-// 🔁 Alle anderen Routen liefern index.html
 app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "../frontend/build/index.html"));
+
+  res.sendFile(
+    path.join(
+      __dirname,
+      "../frontend/build/index.html"
+    )
+  );
+
 });
 
-// 🔊 Server starten
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`✅ Server läuft auf Port ${PORT}`);
-});
+const PORT =
+  process.env.PORT || 3000;
+
+server.listen(
+  PORT,
+  "0.0.0.0",
+  () => {
+
+    console.log(
+      `✅ Server läuft auf Port ${PORT}`
+    );
+
+  }
+);

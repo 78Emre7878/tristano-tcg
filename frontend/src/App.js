@@ -1,176 +1,369 @@
-// src/App.js
 import React, { useEffect, useState } from "react";
 import { useSocket } from "./SocketContext";
 import Gameboard from "./Gameboard";
 
 function App() {
+
   const socket = useSocket();
+
   const [name, setName] = useState("");
-  const [inLobby, setInLobby] = useState(false);
-  const [rooms, setRooms] = useState([]);
-  const [roomId, setRoomId] = useState("");
-  const [playersInRoom, setPlayersInRoom] = useState([]);
-  const [ready, setReady] = useState(false);
-  const [gameState, setGameState] = useState(null);
+
+  const [inLobby, setInLobby] =
+    useState(false);
+
+  const [rooms, setRooms] =
+    useState([]);
+
+  const [roomId, setRoomId] =
+    useState("");
+
+  const [
+    playersInRoom,
+    setPlayersInRoom,
+  ] = useState([]);
+
+  const [ready, setReady] =
+    useState(false);
+
+  const [gameState, setGameState] =
+    useState(null);
 
   useEffect(() => {
+
     if (!socket) return;
 
     socket.on("connect", () => {
-      console.log("✅ Socket verbunden mit ID:", socket.id);
+
+      console.log(
+        "Socket verbunden:",
+        socket.id
+      );
+
     });
 
-    socket.on("lobbyUpdate", ({ players, rooms }) => {
-      setRooms(rooms);
-    });
+    socket.on(
+      "lobbyUpdate",
+      (data) => {
 
-    socket.on("roomCreated", ({ id, players }) => {
-      console.log("🎉 Raum erstellt:", id);
-      setRoomId(id);
-      setPlayersInRoom(players);
-    });
+        console.log(
+          "Lobby Update:",
+          data
+        );
 
-    socket.on("roomJoined", ({ id, players }) => {
-      console.log("🔗 Raum beigetreten:", id);
-      setRoomId(id);
-      setPlayersInRoom(players);
-    });
+        setRooms(
+          data.rooms || []
+        );
 
-    socket.on("readyStatus", (readyList) => {
-      console.log("✅ Ready-Status:", readyList);
-    });
+      }
+    );
 
-    socket.on("gameStarted", (state) => {
-      console.log("🚀 Spiel gestartet!");
-      state.roomId = roomId;
-      setGameState(state);
-    });
+    socket.on(
+      "roomCreated",
+      (room) => {
 
-    socket.on("gameStateUpdate", (updatedState) => {
-      updatedState.roomId = roomId;
-      setGameState(updatedState);
-    });
+        console.log(
+          "Raum erstellt:",
+          room
+        );
+
+        setRoomId(room.id);
+
+        setPlayersInRoom(
+          room.players
+        );
+
+      }
+    );
+
+    socket.on(
+      "roomJoined",
+      (room) => {
+
+        console.log(
+          "Raum beigetreten:",
+          room
+        );
+
+        setRoomId(room.id);
+
+        setPlayersInRoom(
+          room.players
+        );
+
+      }
+    );
+
+    socket.on(
+      "readyStatus",
+      (list) => {
+
+        console.log(
+          "Ready:",
+          list
+        );
+
+      }
+    );
+
+    socket.on(
+      "gameStarted",
+      (state) => {
+
+        console.log(
+          "Spiel gestartet"
+        );
+
+        setGameState(state);
+
+      }
+    );
+
+    socket.on(
+      "gameStateUpdate",
+      (state) => {
+
+        setGameState(state);
+
+      }
+    );
 
     return () => {
-      socket.off("connect");
-      socket.off("lobbyUpdate");
-      socket.off("roomCreated");
-      socket.off("roomJoined");
-      socket.off("readyStatus");
-      socket.off("gameStarted");
-      socket.off("gameStateUpdate");
+
+      socket.off();
+
     };
-  }, [socket, roomId]);
+
+  }, [socket]);
+
+  // ----------------
 
   const joinLobby = () => {
+
     if (!name.trim()) {
-      alert("Bitte Namen eingeben.");
+
+      alert(
+        "Bitte Namen eingeben."
+      );
+
       return;
     }
-    console.log("🔓 Betrete Lobby mit Name:", name);
-    socket.emit("joinLobby", { playerName: name });
+
+    socket.emit(
+      "joinLobby",
+      {
+        playerName: name,
+      }
+    );
+
     setInLobby(true);
   };
 
   const createRoom = () => {
-    console.log("🎯 Raum erstellen Button gedrückt");
-    socket.emit("createRoom");
-  };
 
-  const startAIMatch = () => {
-    console.log("🤖 KI-Match starten Button gedrückt");
-    socket.emit("startAIMatch", { playerName: name });
+    socket.emit(
+      "createRoom"
+    );
+
   };
 
   const joinRoom = (id) => {
-    console.log("🔗 Beitreten zu Raum:", id);
-    socket.emit("joinRoom", id);
+
+    socket.emit(
+      "joinRoom",
+      id
+    );
+
   };
 
   const toggleReady = () => {
-    console.log("✅ Spieler bereit in Raum:", roomId);
-    socket.emit("playerReady", roomId);
+
+    socket.emit(
+      "playerReady",
+      roomId
+    );
+
     setReady(true);
+
   };
 
+  const startAIMatch = () => {
+
+    socket.emit(
+      "startAIMatch"
+    );
+
+  };
+
+  // ----------------
+
   if (!inLobby) {
+
     return (
-      <div style={{ padding: 20 }}>
-        <h1>Tristano TCG</h1>
+
+      <div
+        style={{
+          padding: 20,
+        }}
+      >
+
+        <h1>
+          Tristanoh
+        </h1>
+
         <input
-          placeholder="Dein Name"
           value={name}
-          onChange={(e) => setName(e.target.value)}
+
+          onChange={(e) =>
+            setName(
+              e.target.value
+            )
+          }
+
+          placeholder="Name"
         />
-        <button onClick={joinLobby}>Zur Lobby</button>
+
+        <button
+          onClick={
+            joinLobby
+          }
+        >
+          Zur Lobby
+        </button>
+
       </div>
     );
   }
 
   if (gameState) {
+
     return (
       <Gameboard
         playerName={name}
-        gameState={gameState}
-        setGameState={setGameState}
+        gameState={
+          gameState
+        }
       />
     );
+
   }
 
   return (
-    <div style={{ padding: 20 }}>
+
+    <div
+      style={{
+        padding: 20,
+      }}
+    >
+
       <h1>Lobby</h1>
-      <h2>Willkommen, {name}</h2>
+
+      <h2>
+        Willkommen {name}
+      </h2>
+
       {!roomId && (
+
         <>
-          <button onClick={createRoom}>🎯 Raum erstellen</button>
-          <button onClick={startAIMatch}>🤖 KI-Match starten</button>
-          <h3>Verfügbare Räume:</h3>
-          {rooms.map((room) => (
-            <div key={room.id}>
-              <strong>{room.id}</strong> – Spieler:{" "}
-              {Array.isArray(room.players)
-                ? room.players
-                    .map((p, i) => {
-                      if (typeof p === "object" && p !== null && "playerName" in p) {
-                        return p.playerName;
-                      } else if (typeof p === "string") {
-                        return p;
-                      } else {
-                        return `?${i}`;
-                      }
-                    })
-                    .join(", ")
-                : "Keine Spieler"}
-              <button onClick={() => joinRoom(room.id)}>Beitreten</button>
-            </div>
-          ))}
+
+          <button
+            onClick={
+              createRoom
+            }
+          >
+            Raum erstellen
+          </button>
+
+          <button
+            onClick={
+              startAIMatch
+            }
+          >
+            KI Match
+          </button>
+
+          <h3>Räume</h3>
+
+          {rooms.map(
+            (room) => (
+
+              <div
+                key={room.id}
+              >
+
+                <strong>
+                  {room.id}
+                </strong>
+
+                {" - "}
+
+                {
+                  room.players.join(
+                    ", "
+                  )
+                }
+
+                <button
+                  onClick={() =>
+                    joinRoom(
+                      room.id
+                    )
+                  }
+                >
+                  Beitreten
+                </button>
+
+              </div>
+            )
+          )}
+
         </>
+
       )}
+
       {roomId && (
+
         <>
-          <p>Im Raum: {roomId}</p>
+
+          <h2>
+            Raum:
+            {" "}
+            {roomId}
+          </h2>
+
           <p>
-            Spieler im Raum:{" "}
-            {Array.isArray(playersInRoom)
-              ? playersInRoom
-                  .map((p, i) => {
-                    if (typeof p === "object" && p !== null && "playerName" in p) {
-                      return p.playerName;
-                    } else if (typeof p === "string") {
-                      return p;
-                    } else {
-                      return `Unbekannt${i}`;
-                    }
-                  })
-                  .join(", ")
-              : "Unbekannt"}
+
+            Spieler:
+
+            {" "}
+
+            {
+              playersInRoom.join(
+                ", "
+              )
+            }
+
           </p>
-          {!ready && <button onClick={toggleReady}>Bereit</button>}
+
+          {!ready && (
+
+            <button
+              onClick={
+                toggleReady
+              }
+            >
+              Bereit
+            </button>
+
+          )}
+
         </>
+
       )}
+
     </div>
+
   );
+
 }
 
 export default App;
