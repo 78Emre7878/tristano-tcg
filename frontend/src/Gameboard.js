@@ -397,29 +397,60 @@ function Gameboard({ playerName, gameState }) {
           }
         </h3>
 
-        <div className="shields">
+<div className="shields">
 
-          {enemyField.shields.map(
-            (shield, i) => (
+  {enemyField.shields.filter(Boolean).length > 0 ? (
 
-              <button
-                key={i}
-                disabled={!shield}
-                onClick={() =>
-                  attackTarget(-1)
-                }
-              >
+    enemyField.shields.map(
+      (shield, i) => (
 
-                {shield
-                  ? `Schild ${i + 1}`
-                  : "X"}
+        <button
+          key={i}
+          disabled={!shield}
 
-              </button>
+          onClick={() =>
+            attackTarget(-1)
+          }
 
-            )
-          )}
+          style={{
+            width: "100px",
+            height: "120px",
+            margin: "5px",
+            fontSize: "18px",
+          }}
+        >
 
-        </div>
+          {shield
+            ? `Schild ${i + 1}`
+            : "X"}
+
+        </button>
+
+      )
+    )
+
+  ) : (
+
+    <button
+      onClick={() =>
+        attackTarget(-1)
+      }
+
+      style={{
+        background: "red",
+        color: "white",
+        fontSize: "28px",
+        padding: "20px",
+        borderRadius: "10px",
+        marginTop: "10px",
+      }}
+    >
+      ⚔️ Direkter Angriff
+    </button>
+
+  )}
+
+</div>
 
         <div className="monster-zones">
 
